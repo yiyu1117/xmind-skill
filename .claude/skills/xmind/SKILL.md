@@ -1,110 +1,113 @@
 ---
 name: xmind
-description: Use when the user wants to read, create, edit, or manipulate XMind mind map files (.xmind) — including adding/updating/deleting topics, moving topics between parents, adding sheets, or exporting to Markdown/JSON/YAML/XML.
+description: Use when the user wants to read, create, edit, or manipulate XMind mind map files (.xmind). For creating new mind maps, ALWAYS generate Markdown first then convert with md_to_xmind.py — never construct the XMind JSON structure manually.
 ---
 
 # XMind File Operations
 
 ## Overview
 
-Read, create, and modify XMind mind map files (.xmind). Uses `xmindparser` for reading/exporting and `xmind_tools.py` for writing and editing. XMind files are ZIP archives containing `content.json` (Zen format) or `content.xml` (legacy format).
+Two workflows for two scenarios:
 
-## When to Use
+| Scenario | Method |
+|----------|--------|
+| **Creating a NEW mind map** | 1. AI generates Markdown → 2. `md_to_xmind.py` converts to `.xmind` |
+| **Reading / Editing an EXISTING .xmind** | Use `xmind_tools.py` read/export/modify commands |
 
-- Reading or exploring `.xmind` file structure
-- Creating new mind maps programmatically
-- Adding, renaming, or deleting topics
-- Moving topics between branches
-- Adding new sheets (canvases)
-- Exporting to Markdown, JSON, YAML, or XML
+## Creating: Markdown → XMind (Primary)
 
-## Quick Reference
+### Step 1: AI generates Markdown
 
-### Reading
+Use heading levels to represent the mind map tree:
 
-```python
-# Full structure (sheets → topics tree)
-data = read_xmind('file.xmind')
+```
+# {根主题 ─ 即 Sheet 标题}
 
-# Flat list of all topics with IDs
-topics = get_all_topics('file.xmind')
-# → [{'id': '...', 'title': '...', 'level': 0, 'sheet': '...'}, ...]
+## {一级分支}
+非标题行作为备注（note），可选。
+
+### {二级分支}
+
+#### {三级分支}
+
+## {另一个一级分支}
 ```
 
-### Modifying (modifies file in-place by default; use `output_path` to save a copy)
+- `# H1` = Sheet 的根主题。**多个 `#` 创建多个 Sheet**
+- `## H2` = 根主题的直接子节点
+- `### H3` = 上一个 H2 的子节点
+- `#### H4` = 上一个 H3 的子节点
+- 标题之间的段落/列表文本 → 作为该主题的备注
+- `---` 分隔符会被忽略
 
-```python
-# Add child topic — returns new topic ID
-new_id = add_topic('file.xmind', parent_id='...', title='New Topic')
+**AI 操作步骤：**
+1. 先输出 Markdown 让用户确认结构
+2. 将 Markdown 内容写入 `.md` 文件
+3. 运行转换命令
 
-# Update topic title
-update_topic('file.xmind', topic_id='...', new_title='Renamed')
-
-# Delete topic and all its children
-delete_topic('file.xmind', topic_id='...')
-
-# Move topic to a different parent
-move_topic('file.xmind', topic_id='...', new_parent_id='...')
-
-# Add a new sheet
-add_sheet('file.xmind', sheet_title='Sheet 2', root_title='Center')
-```
-
-### Creating
-
-```python
-data = [{
-    'title': 'Sheet 1',
-    'topic': {
-        'title': 'Root',
-        'topics': [
-            {'title': 'Child 1'},
-            {'title': 'Child 2', 'topics': [
-                {'title': 'Grandchild'}
-            ]}
-        ]
-    }
-}]
-write_xmind('output.xmind', data, template='existing.xmind')  # template inherits styles
-```
-
-### Exporting
-
-```python
-md  = export_markdown('file.xmind')   # → str
-json_str = export_json('file.xmind')   # → str
-yaml_str = export_yaml('file.xmind')   # → str
-xml_str  = export_xml('file.xmind')    # → str
-```
-
-### CLI
+### Step 2: Convert
 
 ```bash
-python xmind_tools.py file.xmind list              # 列出所有主题及 ID
-python xmind_tools.py file.xmind read              # 打印完整结构
-python xmind_tools.py file.xmind add "新主题" -p <parent_id>
-python xmind_tools.py file.xmind update <topic_id> "新标题"
-python xmind_tools.py file.xmind delete <topic_id>
-python xmind_tools.py file.xmind move <topic_id> <new_parent_id>
-python xmind_tools.py file.xmind add-sheet "新画布"
-python xmind_tools.py file.xmind export -f md       # Markdown
-python xmind_tools.py file.xmind create data.json -t template.xmind
+# 基础转换
+python .claude/skills/xmind/md_to_xmind.py input.md output.xmind
+
+# 带模板（继承样式/主题）
+python .claude/skills/xmind/md_to_xmind.py input.md output.xmind --template existing.xmind
+```
+
+**模板建议：** 使用项目中的 `.xmind` 文件作为模板可继承其配色和样式。
+
+## Reading Existing XMind
+
+```bash
+# 列出所有主题及 ID（树形结构）
+python .claude/skills/xmind/xmind_tools.py file.xmind list
+
+# 打印完整 JSON 结构
+python .claude/skills/xmind/xmind_tools.py file.xmind read
+```
+
+## Editing Existing XMind
+
+```bash
+# 添加子主题（需要先 list 获取 parent_id）
+python .claude/skills/xmind/xmind_tools.py file.xmind add "新主题" -p <parent_id>
+
+# 修改标题
+python .claude/skills/xmind/xmind_tools.py file.xmind update <topic_id> "新标题"
+
+# 删除主题（含子节点）
+python .claude/skills/xmind/xmind_tools.py file.xmind delete <topic_id>
+
+# 移动主题到另一个父级下
+python .claude/skills/xmind/xmind_tools.py file.xmind move <topic_id> <new_parent_id>
+
+# 添加新 Sheet
+python .claude/skills/xmind/xmind_tools.py file.xmind add-sheet "新画布" --root "根主题"
+```
+
+## Exporting
+
+```bash
+python .claude/skills/xmind/xmind_tools.py file.xmind export -f md     # Markdown
+python .claude/skills/xmind/xmind_tools.py file.xmind export -f json   # JSON
+python .claude/skills/xmind/xmind_tools.py file.xmind export -f yaml   # YAML
+python .claude/skills/xmind/xmind_tools.py file.xmind export -f xml    # XML
 ```
 
 ## Common Mistakes
 
 | Mistake | Fix |
 |---------|-----|
-| Passing wrong parent ID to `add_topic` | Use `get_all_topics()` first to list all valid IDs |
-| Trying to delete rootTopic | Root topic cannot be deleted — delete child topics instead |
-| Overwriting file unintentionally | Pass `output_path='copy.xmind'` to save a copy instead |
-| Forgetting `ensure_ascii=False` when reading JSON manually | xmind_tools.py handles encoding internally — use the API |
-| Using `add_topic` without `output_path` | This modifies the original file — back up first if needed |
+| Trying to manually construct XMind JSON/dict in Python | **Don't.** Generate Markdown and use `md_to_xmind.py` instead |
+| Using wrong parent ID in edit commands | Run `list` first to see all IDs |
+| Deleting rootTopic | Cannot delete root — delete child topics or recreate via markdown |
+| Forgetting `--template` on new files | Without template, file has no styles; pass any `.xmind` as `--template` |
+| Markdown heading levels skip a level (e.g. ## → ####) | Keep levels contiguous; a skipped level causes the topic to attach to a higher ancestor |
 
 ## Implementation Notes
 
-- **Zen format** (`content.json`): Modern XMind, uses JSON. Primary target.
-- **Legacy format** (`content.xml`): Older XMind. Reading supported via xmindparser; writing not supported.
-- `xmindparser` is **read-only**. All write/edit operations use `xmind_tools.py` which directly manipulates `content.json` inside the ZIP archive.
-- Topic IDs are 26-char hex strings. New IDs are auto-generated in the same format.
-- When creating files with `write_xmind()`, pass a `template` to inherit theme/stylesheet. Without a template, a minimal default is used.
+- **Dependency:** `xmindparser` (pip install xmindparser) — required for reading/exporting
+- **Conversion:** `md_to_xmind.py` is standalone — no xmindparser needed for markdown→xmind
+- **Zen format only:** Write operations target `content.json` (modern XMind). Legacy `content.xml` format is read-only.
+- **Encoding:** All files use UTF-8. Topic IDs are auto-generated 26-char hex strings.
