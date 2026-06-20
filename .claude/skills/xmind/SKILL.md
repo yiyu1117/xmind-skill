@@ -16,46 +16,54 @@ Two workflows for two scenarios:
 
 ## Creating: Markdown → XMind (Primary)
 
-### Step 1: AI generates Markdown
+### CRITICAL: Use Headings ONLY
 
-Use heading levels to represent the mind map tree:
+**XMind 的"正文/备注"需要点击图标才能看到，默认是隐藏的。因此 Markdown 中所有内容必须用标题（`#`）表示，不要用列表或段落 — 这样 XMind 中所有节点都直接可见。**
 
+```markdown
+# 根主题
+
+## 一级分支 A
+### 分支 A 的说明点 1
+### 分支 A 的说明点 2
+
+## 一级分支 B
+### 分支 B 的子点
+#### 更细的细节
 ```
-# {根主题 ─ 即 Sheet 标题}
 
-## {一级分支}
-非标题行作为备注（note），可选。
+**规则：**
+- 每一行都以 `#` 开头 — 没有例外
+- 需要表达多句话 → 拆成多个 `###` 子标题
+- 列表要点 → 每个要点一个 `###` 或 `####`
+- 绝不用 `- item` 列表或正文段落
+- 除非用户明确说「备注」「正文」，才可以用正文 + `--keep-notes`
 
-### {二级分支}
+### AI Workflow
 
-#### {三级分支}
+1. **输出 Markdown 给用户确认** — 纯标题，无列表/正文
+2. **写入 `.md` 文件**
+3. **转换：**
+   ```bash
+   python .claude/skills/xmind/md_to_xmind.py input.md output.xmind --template existing.xmind
+   ```
 
-## {另一个一级分支}
-```
+### 格式速查
 
-- `# H1` = Sheet 的根主题。**多个 `#` 创建多个 Sheet**
-- `## H2` = 根主题的直接子节点
-- `### H3` = 上一个 H2 的子节点
-- `#### H4` = 上一个 H3 的子节点
-- 标题之间的段落/列表文本 → 作为该主题的备注
-- `---` 分隔符会被忽略
+| Markdown | XMind 中 |
+|----------|----------|
+| `# 标题` | 新 Sheet（根主题）。多个 `#` = 多个 Sheet |
+| `## 标题` | 根主题的直接子节点 |
+| `### 标题` | 父标题的子节点 |
+| `#### 标题` | 更深层级 |
+| 正文 / `- list` | **默认转为子主题**（每行一个），XMind 中直接可见 |
+| 正文 + `--keep-notes` | 正文作为备注（隐藏，需点图标） ← 仅用户明确要求时使用 |
 
-**AI 操作步骤：**
-1. 先输出 Markdown 让用户确认结构
-2. 将 Markdown 内容写入 `.md` 文件
-3. 运行转换命令
-
-### Step 2: Convert
+### 带模板创建
 
 ```bash
-# 基础转换
-python .claude/skills/xmind/md_to_xmind.py input.md output.xmind
-
-# 带模板（继承样式/主题）
 python .claude/skills/xmind/md_to_xmind.py input.md output.xmind --template existing.xmind
 ```
-
-**模板建议：** 使用项目中的 `.xmind` 文件作为模板可继承其配色和样式。
 
 ## Reading Existing XMind
 

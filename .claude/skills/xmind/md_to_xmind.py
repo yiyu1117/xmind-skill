@@ -13,11 +13,13 @@ Markdown 格式约定:
     ## 另一个一级分支
     ---                      ← 可选分隔符
 
-    标题之间的段落/列表文本  → 作为该主题的备注 (note)
+    标题之间的正文/列表      → 默认转为该主题的子节点（XMind 中直接可见）
+    --keep-notes             → 正文作为备注（需点图标才能看到）
 
 用法:
     python md_to_xmind.py input.md output.xmind
     python md_to_xmind.py input.md output.xmind --template base.xmind
+    python md_to_xmind.py input.md output.xmind --keep-notes  # 正文→备注
 """
 
 import json
@@ -33,53 +35,67 @@ from typing import Optional
 # ============================================================================
 
 
-def parse_markdown(text: str) -> list[dict]:
+def parse_markdown(text: str, keep_notes: bool = False) -> list[dict]:
     """
     解析 Markdown 文本为 sheet 列表。
 
     参数:
         text: Markdown 字符串
+        keep_notes: False（默认）= 正文行转为子主题（XMind 中直接可见）
+                    True = 正文行保留为备注（需点击图标查看）
 
     返回:
-        list[dict]: sheet 列表，每个 sheet 格式为:
-            {
-                'title': 'Sheet标题',
-                'topic': {
-                    'title': '根主题',
-                    'topics': [...],   # 子主题列表（递归）
-                    'note': '...',     # 备注文本（可选）
-                }
-            }
+        list[dict]: sheet 列表
     """
     sheets = []
     current_sheet = None
-    topic_stack = []       # [(heading_level, topic_dict)]
-    pending_note_lines = []  # 收集当前主题下的备注文本
-    last_heading_level = 0
+    topic_stack = []          # [(heading_level, topic_dict)]
+    pending_lines = []        # 收集当前主题下的正文行
+    heading_level_for_lines = 0  # 正文行应作为哪个层级的子主题
 
-    def flush_note():
-        """将收集的备注文本写入栈顶主题。"""
-        nonlocal pending_note_lines
-        if pending_note_lines and topic_stack:
-            note_text = '\n'.join(pending_note_lines).strip()
-            if note_text:
-                topic_stack[-1][1]['note'] = note_text
-        pending_note_lines = []
+    def flush_pending():
+        """将收集的正文行写入栈顶主题。"""
+        nonlocal pending_lines
+        if pending_lines and topic_stack:
+            text = '\n'.join(pending_lines).strip()
+            if text:
+                parent = topic_stack[-1][1]
+                if keep_notes:
+                    # 正文 → 备注（需点图标）
+                    parent['note'] = text
+                else:
+                    # 正文 → 子主题（直接可见），每行一个子主题
+                    if 'topics' not in parent:
+                        parent['topics'] = []
+                    for line_text in pending_lines:
+                        line_text = line_text.strip()
+                        if not line_text:
+                            continue
+                        # 去掉列表前缀: - item, * item, 1. item
+                        clean = line_text
+                        for prefix in ('- ', '* ', '+ '):
+                            if clean.startswith(prefix):
+                                clean = clean[len(prefix):]
+                                break
+                        else:
+                            # 有序列表: 1. , 1)
+                            import re
+                            m = re.match(r'^\d+[.)]\s*', clean)
+                            if m:
+                                clean = clean[m.end():]
+                        if clean:
+                            parent['topics'].append({'title': clean, 'topics': []})
+        pending_lines = []
 
     for raw_line in text.split('\n'):
         line = raw_line.rstrip()
 
-        # 跳过空行
-        if not line:
-            continue
-
-        # 跳过分隔符
-        if line.strip() == '---':
+        # 跳过空行和分隔符
+        if not line or line.strip() == '---':
             continue
 
         # 标题行
         if line.startswith('#'):
-            # 计算标题级别
             level = 0
             for ch in line:
                 if ch == '#':
@@ -91,18 +107,15 @@ def parse_markdown(text: str) -> list[dict]:
             if not title:
                 continue
 
-            flush_note()
+            flush_pending()
 
             if level == 1:
-                # 新 Sheet
                 topic = {'title': title, 'topics': []}
                 current_sheet = {'title': title, 'topic': topic}
                 sheets.append(current_sheet)
                 topic_stack = [(1, topic)]
-                last_heading_level = 1
 
             elif current_sheet is not None:
-                # 找父级：栈中最后一个 level 严格小于当前 level 的 topic
                 while topic_stack and topic_stack[-1][0] >= level:
                     topic_stack.pop()
 
@@ -113,31 +126,30 @@ def parse_markdown(text: str) -> list[dict]:
                     new_topic = {'title': title, 'topics': []}
                     parent['topics'].append(new_topic)
                     topic_stack.append((level, new_topic))
-                    last_heading_level = level
             else:
-                # 第一个标题不是 #，也作为一个 sheet 处理
                 topic = {'title': title, 'topics': []}
                 current_sheet = {'title': title, 'topic': topic}
                 sheets.append(current_sheet)
-                topic_stack = [(2, topic)]  # 当作 level=2 处理，这样后续 ### 等能正常挂载
-                last_heading_level = 2
+                topic_stack = [(2, topic)]
 
         else:
-            # 非标题行 → 收集为备注
-            pending_note_lines.append(line)
+            # 非标题行 → 收集
+            pending_lines.append(line)
 
-    flush_note()
+    flush_pending()
 
-    # 去除空的 topics 列表
-    def clean_topics(topic):
-        if 'topics' in topic and not topic['topics']:
-            del topic['topics']
-        if 'topics' in topic:
-            for child in topic['topics']:
-                clean_topics(child)
+    # 去除空的 topics 列表和空的 note
+    def clean_topic(t):
+        if 'topics' in t and not t['topics']:
+            del t['topics']
+        if 'note' in t and not t['note']:
+            del t['note']
+        if 'topics' in t:
+            for child in t['topics']:
+                clean_topic(child)
 
     for sheet in sheets:
-        clean_topics(sheet['topic'])
+        clean_topic(sheet['topic'])
 
     return sheets
 
@@ -216,24 +228,28 @@ def _write_zip(path: str, files: dict):
             zf.writestr(name, data)
 
 
-def md_to_xmind(md_path: str, xmind_path: str, template: Optional[str] = None):
+def md_to_xmind(md_path: str, xmind_path: str, template: Optional[str] = None,
+                keep_notes: bool = False):
     """
     将 Markdown 文件转换为 .xmind 思维导图文件。
 
     参数:
-        md_path:   输入 .md 文件路径
+        md_path:    输入 .md 文件路径
         xmind_path: 输出 .xmind 文件路径
-        template:  可选模板 .xmind 文件（继承其样式和元数据）
+        template:   可选模板 .xmind 文件（继承其样式和元数据）
+        keep_notes: False（默认）= 正文行转为子主题，XMind 中直接可见
+                    True = 正文行保留为备注，需点击图标查看
 
     示例:
         >>> md_to_xmind('思维导图.md', '输出.xmind')
         >>> md_to_xmind('思维导图.md', '输出.xmind', template='模板.xmind')
+        >>> md_to_xmind('思维导图.md', '输出.xmind', keep_notes=True)
     """
     # 读取并解析 Markdown
     with open(md_path, 'r', encoding='utf-8') as f:
         md_text = f.read()
 
-    sheets = parse_markdown(md_text)
+    sheets = parse_markdown(md_text, keep_notes=keep_notes)
 
     if not sheets:
         raise ValueError("Markdown 文件中未找到任何标题")
@@ -293,11 +309,13 @@ def main():
     parser.add_argument('input', help='输入的 .md 文件路径')
     parser.add_argument('output', help='输出的 .xmind 文件路径')
     parser.add_argument('--template', '-t', help='模板 .xmind 文件（继承样式）')
+    parser.add_argument('--keep-notes', action='store_true',
+                        help='正文行保留为备注（默认转为子主题）')
 
     args = parser.parse_args()
 
     try:
-        md_to_xmind(args.input, args.output, args.template)
+        md_to_xmind(args.input, args.output, args.template, args.keep_notes)
     except Exception as e:
         print(f"错误: {e}", file=sys.stderr)
         sys.exit(1)
