@@ -1,0 +1,14 @@
+# 测试文件
+测试_copy.xmind
+测试_copy.md
+创建测试.xmind
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Claude
+.claude/plans/
